@@ -1,63 +1,75 @@
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+
 /**
 
-	The purpose of this contract is to store on Fuse block headers from different blockchains signed by the Fuse validators.
+	The purpose of this contract is to store on Fuse block headers 
+	from different blockchains signed by the Fuse validators.
 
 **/
 contract BlockHeaderRegistry {
 
+	// To prevent double signatures
+	mapping(bytes32 => mapping(address => bool)) hasValidatorSigned;
+
 	struct SignedBlock {
-	 bytes[] signatures;
-	 uint256 cycleEnd;
-	 // just for fuse
-	 address[] validators;
-	 // to prevent double signatures
-	 mapping(address => bool) hasValidatorSigned;
+		bytes[] signatures;
+		// Just for fuse 
+		uint256 cycleEnd;
+		address[] validators;
 	}
 
 	struct BlockHeader {
-	  bytes32 parent_hash;
-	  uint256 timestamp;
-	  uint256 number;
-	  address author;
-	  bytes32 transactions_root;
-	  bytes32 uncles_hash;
-	  bytes extra_data;
-	  bytes32 state_root;
-	  bytes32 receipts_root;
-	  bytes log_bloom;
-	  uint256 gas_used;
-	  uint256 gas_limit;
-	  uint256 difficulty;
-	  bytes32 mixHash;
-	  uint256 nonce;
+		bytes32 parent_hash;
+		uint256 timestamp;
+		uint256 number;
+		address author;
+		bytes32 transactions_root;
+		bytes32 uncles_hash;
+		bytes extra_data;
+		bytes32 state_root;
+		bytes32 receipts_root;
+		bytes log_bloom;
+		uint256 gas_used;
+		uint256 gas_limit;
+		uint256 difficulty;
+		bytes32 mixHash;
+		uint256 nonce;
 	}
 
 	struct Block {
-	 BlockHeader header;
-	 bytes signature;
-	 uint256 blockchainId;
-	 bytes32 blockHash;
-	 address[] validators;
-	 uint256 cycleEnd;
+		BlockHeader header;
+		bytes signature;
+		uint256 blockchainId;
+		bytes32 blockHash;
+		uint256 cycleEnd;
+		address[] validators;
 	}
 
 	// Block hashes per block number for blockchain
 	mapping(uint256 => mapping(uint256 => bytes32[])) public blockHashes;
 
 	// Validator signatures per blockHash
-	mapping(bytes32 => SignedBlock) public blockSignatures;
+	mapping(bytes32 => SignedBlock) public signedBlocks;
 
 	// Block header for blockHash
-	mapping(bytes32 => BlockHeader) public blockHeaders
+	mapping(bytes32 => BlockHeader) blockHeaders;
+
+	mapping(uint256 => string) public blockchains;
 
 	address private votingContract;
+
+	constructor(address _votingContract) {
+		votingContract = _votingContract == address(0) ? msg.sender: _votingContract;
+	}
 
 	event Blockchain(
 		uint256 blockchainId,
 		string rpc
 	);
 	modifier onlyVoting() {
-		require(msg.sender == votingContract);
+		require(msg.sender == votingContract, 'onlyVoting');
 		_;
 	}
 	function addBlockchain(uint256 blockchainId, string memory rpc) external onlyVoting {
@@ -69,60 +81,71 @@ contract BlockHeaderRegistry {
 		require(_isValidator(msg.sender));
 		_;
 	}
-	function addSignedBlocks(Block[] memory blocks) external onlyValidator {
-		for(uint256 i = 0; i < blocks.length; i ++) {
-			Block memory block = blocks[i];
-			if (blocks[i].blockchainId == block.chainid) {
-				_addFuseSignedBlock(block.header, block.signature, block.blockHash, block.validators, block.cycleEnd);
+
+	function addSignedBlocks(Block[] calldata blocks) external onlyValidator {
+		for (uint256 i = 0; i < blocks.length; i ++) {
+			Block memory  _block = blocks[i];
+			if (_block.blockchainId == block.chainid) {
+				_addFuseSignedBlock(_block.header, _block.signature, _block.blockHash, _block.validators, _block.cycleEnd);
 			} else {
-				_addSignedBlock(block.header, block.signature, block.blockchainId, block.blockHash);
+				_addSignedBlock(_block.header, _block.signature, _block.blockchainId, _block.blockHash);
 			}
 		}
 	}
 
-	function getSignedBlock(uint256 blockchainId, uint256 number) public view returns (bytes rlpHeader, bytes[] memory signatures, address[] memory validators, uint256 cycleEnd) {
+	function getSignedBlock(uint256 blockchainId, uint256 number) public view returns (bytes32 blockHash, BlockHeader memory blockHeader, SignedBlock memory signedBlock) {
 		bytes32[] memory _blockHashes = blockHashes[blockchainId][number];
-		require(_blockHashes.length != 0)
-		bytes32 highest = _blockHashes[0];
+		require(_blockHashes.length != 0);
+		blockHash = _blockHashes[0];
 		for (uint256 i = 1; i < _blockHashes.length; i++) {
-			if (_blockHashes[i] > highest) highest = _blockHashes[i];
+			if (_blockHashes[i] > blockHash) blockHash = _blockHashes[i];
 		}
-		SignedBlock storage block = blockSignatures[highest];
-		return (abi.encode(blockHeaders[highest]), block.signatures, block.validators, block.cycleEnd);
+		SignedBlock storage _block = signedBlocks[blockHash];
+		signedBlock.signatures = _block.signatures;
+		if (blockchainId == block.chainid) {
+			signedBlock.validators = _block.validators;
+			signedBlock.cycleEnd = _block.cycleEnd;
+		}
+		{
+			
+			blockHeader = blockHeaders[blockHash];
+		}
 	}
 
-	function _addSignedBlock(BlockHeader memory blockHeader, bytes signature, uint256 blockchainId, bytes32 blockHash) internal {
-		require(_hashHeader(blockHeader) == blockHash);
+	function _addSignedBlock(BlockHeader memory blockHeader, bytes memory signature, uint256 blockchainId, bytes32 blockHash) internal {
+		require(keccak256(abi.encode(blockHeader)) == blockHash);
 		address signer = ECDSA.recover(blockHash, signature);
 		require(_isValidator(signer));
-		require(!blockSignatures[blockHash].hasValidatorSigned[signer]);
+		require(!hasValidatorSigned[blockHash][signer]);
 		if (_isNewBlock(blockHash)) {
 			blockHeaders[blockHash] = blockHeader;
 			blockHashes[blockchainId][blockHeader.number].push(blockHash);
 		}
-		blockSignatures[blockHash].hasValidatorSigned[signer] = true;
-		blockSignatures[blockHash].signatures.push(signature);
+		hasValidatorSigned[blockHash][signer] = true;
+		signedBlocks[blockHash].signatures.push(signature);
 	}
 
-	function _addFuseSignedBlock(BlockHeader memory blockHeader, bytes signature, address[] memory validators, uint256 cycleEnd) internal {
-		require(_hashHeader(blockHeader) == blockHash);
-		bytes32 payload = keccak256(abi.encode(blockHash, validators, cycleEnd);
+	function _addFuseSignedBlock(BlockHeader memory blockHeader, bytes memory signature, bytes32 blockHash, address[] memory validators, uint256 cycleEnd) internal {
+		require(keccak256(abi.encode(blockHeader)) == blockHash);
+		bytes32 payload = keccak256(abi.encode(blockHash, validators, cycleEnd));
 		address signer = ECDSA.recover(payload, signature);
 		require(_isValidator(signer));
-		require(!blockSignatures[payload].hasValidatorSigned[signer]);
+		require(!hasValidatorSigned[payload][signer]);
 		if (_isNewBlock(payload)) {
 			blockHeaders[payload] = blockHeader;
-			blockSignatures[payload].validators = validators;
-			blockSignatures[payload].cycleEnd = cycleEnd;
+			signedBlocks[payload].validators = validators;
+			signedBlocks[payload].cycleEnd = cycleEnd;
 			blockHashes[block.chainid][blockHeader.number].push(payload);
 		}
-		blockSignatures[payload].hasValidatorSigned[signer] = true;
-		blockSignatures[payload].signatures.push(signature);
+		hasValidatorSigned[payload][signer] = true;
+		signedBlocks[payload].signatures.push(signature);
 	}
 
-	function _isValidator(address person) internal virtual returns (bool);
+	function _isValidator(address person) internal virtual returns (bool) {
+		return person == votingContract;
+	}
 
-	function _isNewBlock(bytes32 key) private returns (bool) {
-		return blockSignatures[payload].signatures.length == 0;
+	function _isNewBlock(bytes32 key) private view returns (bool) {
+		return signedBlocks[key].signatures.length == 0;
 	}
 }
