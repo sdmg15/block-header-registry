@@ -21,21 +21,22 @@ contract BlockHeaderRegistry {
 	}
 
 	struct BlockHeader {
-		bytes32 parent_hash;
-		uint256 timestamp;
-		uint256 number;
-		address author;
-		bytes32 transactions_root;
-		bytes32 uncles_hash;
-		bytes extra_data;
-		bytes32 state_root;
-		bytes32 receipts_root;
-		bytes log_bloom;
-		uint256 gas_used;
-		uint256 gas_limit;
+		bytes32 parentHash;
+		bytes32 uncleHash;
+		address coinbase;
+		bytes32 root;
+		bytes32 txHash;
+		bytes32 receiptHash;
+		bytes bloom;
 		uint256 difficulty;
-		bytes32 mixHash;
+		uint256 number;
+		uint256 gasLimit;
+		uint256 gasUsed;
+		uint256 time;
+		bytes extra;
+		bytes32 mixDigest;
 		uint256 nonce;
+		// uint256 baseFee;
 	}
 
 	struct Block {
