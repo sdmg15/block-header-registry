@@ -1,7 +1,6 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "hardhat/console.sol";
 
 /**
 
@@ -16,12 +15,12 @@ contract BlockHeaderRegistry {
 
 
 	struct Signature {
-		uint8 v;
 		bytes32 r;
-		bytes32 s;
+		bytes32 vs;
 	}
 
 	struct SignedBlock {
+		address creator;
 		bytes[] signatures;
 		// Just for fuse 
 		uint256 cycleEnd;
@@ -92,13 +91,33 @@ contract BlockHeaderRegistry {
 		_;
 	}
 
+	/**
+		@notice Add a signed block from any blockchain.
+		@notice Costs slightly more if the block has never been registered before.
+		@notice Processes fuse blocks slightly differently.
+		@param blocks List of block headers and signatures to add.
+	*/
 	function addSignedBlocks(Block[] calldata blocks) external onlyValidator {
 		for (uint256 i = 0; i < blocks.length; i ++) {
 			Block calldata  _block = blocks[i];
-			if (_block.blockchainId == block.chainid) {
-				_addFuseSignedBlock(_block.rlpHeader, _block.signature, _block.blockHash, _block.validators, _block.cycleEnd);
-			} else {
-				_addSignedBlock(_block.rlpHeader, _block.signature, _block.blockchainId, _block.blockHash);
+			bytes32 rlpHeaderHash = keccak256(_block.rlpHeader);
+			require(rlpHeaderHash == _block.blockHash, "rlpHeaderHash");
+			bool isFuse = _isFuse(_block.blockchainId);
+			bytes32 payload = isFuse ? keccak256(abi.encodePacked(rlpHeaderHash, _block.validators, _block.cycleEnd)) : rlpHeaderHash;
+			address signer = ECDSA.recover(ECDSA.toEthSignedMessageHash(payload), _block.signature.r, _block.signature.vs);
+			require(msg.sender == signer, "msg.sender == signer");
+			require(!hasValidatorSigned[payload][msg.sender], 'hasSigned');
+			hasValidatorSigned[payload][signer] = true;
+			signedBlocks[payload].signatures.push(abi.encodePacked(_block.signature.r, _block.signature.vs));
+			if (_isNewBlock(payload)) {
+	                        BlockHeader memory blockHeader = _parseBlock(_block.rlpHeader);
+	                        blockHeaders[payload] = blockHeader;
+	                        blockHashes[_block.blockchainId][blockHeader.number].push(payload);
+				if (isFuse) {
+					signedBlocks[payload].validators = _block.validators;
+					signedBlocks[payload].cycleEnd = _block.cycleEnd;
+				}
+				signedBlocks[payload].creator = msg.sender;
 			}
 		}
 	}
@@ -334,38 +353,6 @@ contract BlockHeaderRegistry {
 		}
 	}
 
-	function _addSignedBlock(bytes calldata rlpHeader, Signature memory signature, uint256 blockchainId, bytes32 blockHash) internal {
-		require(keccak256(rlpHeader) == blockHash, 'keccak256(rlpHeader) == blockHash');
-		address signer = ECDSA.recover(blockHash, signature.v, signature.r, signature.s);
-		console.log(signer);
-		require(_isValidator(signer), '_isValidator(signer)');
-		require(!hasValidatorSigned[blockHash][signer], 'hasSigned');
-		if (_isNewBlock(blockHash)) {
-			BlockHeader memory blockHeader = _parseBlock(rlpHeader);
-			blockHeaders[blockHash] = blockHeader;
-			blockHashes[blockchainId][blockHeader.number].push(blockHash);
-		}
-		hasValidatorSigned[blockHash][signer] = true;
-		signedBlocks[blockHash].signatures.push(abi.encodePacked(signature.v, signature.r, signature.s));
-	}
-
-	function _addFuseSignedBlock(bytes calldata rlpHeader, Signature memory signature, bytes32 blockHash, address[] memory validators, uint256 cycleEnd) internal {
-		require(keccak256(rlpHeader) == blockHash, 'blockHash');
-		bytes32 payload = keccak256(abi.encode(blockHash, validators, cycleEnd));
-		address signer = ECDSA.recover(payload, signature.v, signature.r, signature.s);
-		require(_isValidator(signer));
-		require(!hasValidatorSigned[payload][signer]);
-		if (_isNewBlock(payload)) {
-			BlockHeader memory blockHeader = _parseBlock(rlpHeader);
-			blockHeaders[payload] = blockHeader;
-			signedBlocks[payload].validators = validators;
-			signedBlocks[payload].cycleEnd = cycleEnd;
-			blockHashes[block.chainid][blockHeader.number].push(payload);
-		}
-		hasValidatorSigned[payload][signer] = true;
-		signedBlocks[payload].signatures.push(abi.encodePacked(signature.v, signature.r, signature.s));
-	}
-
 	function _isValidator(address person) internal virtual returns (bool) {
 		// TODO: better logic here
 		return person == votingContract;
@@ -373,5 +360,10 @@ contract BlockHeaderRegistry {
 
 	function _isNewBlock(bytes32 key) private view returns (bool) {
 		return signedBlocks[key].signatures.length == 0;
+	}
+
+	function _isFuse(uint256 blockchainId) internal view virtual returns (bool) {
+		// TODO better setup for this
+		return blockchainId == 0x7a;
 	}
 }

@@ -13,7 +13,6 @@ describe('BlockHeaderRegistry', async () => {
 		BlockHeaderRegistry = await ethers.getContractFactory('BlockHeaderRegistryMock')
 		blockHeaderRegistry = await BlockHeaderRegistry.connect(signers[0]).deploy()
 		await blockHeaderRegistry.deployed()
-		console.log(signers.map(sig => sig.address))
 	})
 	describe('Blockchains', () => {
 		it('Should add a new blockchain', async () => {
@@ -100,11 +99,11 @@ describe('BlockHeaderRegistry', async () => {
 			}))
 			const blockHash = "0x5d15649e25d8f3e2c0374946078539d200710afc977cdfc6a977bd23f20fa8e8"
 			expect(blockHash).to.equal(ethers.utils.keccak256(rlpHeader))
-			const signature = await signer.signMessage(ethers.utils.keccak256(rlpHeader))
+			const { _vs:vs, r } = ethers.utils.splitSignature(await signer.signMessage(ethers.utils.arrayify(ethers.utils.keccak256(rlpHeader))))
 			const tx = await blockHeaderRegistry.connect(signer).addSignedBlocks([
 				[
 					rlpHeader,
-					ethers.utils.splitSignature(signature),
+					[ r, vs ],
 					1,
 					blockHash,
 					0, // cycleEnd
