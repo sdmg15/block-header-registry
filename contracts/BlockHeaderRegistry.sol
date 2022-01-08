@@ -343,14 +343,11 @@ contract BlockHeaderRegistry {
 		}
 		SignedBlock storage _block = signedBlocks[blockHash];
 		signedBlock.signatures = _block.signatures;
-		if (blockchainId == block.chainid) {
+		if (_isFuse(blockchainId)) {
 			signedBlock.validators = _block.validators;
 			signedBlock.cycleEnd = _block.cycleEnd;
 		}
-		{
-			
-			blockHeader = blockHeaders[blockHash];
-		}
+		blockHeader = blockHeaders[blockHash];
 	}
 
 	function _isValidator(address person) internal virtual returns (bool) {
