@@ -112,92 +112,78 @@ contract BlockHeaderRegistry {
 		uint256 nonce;
 		// uint256 baseFee;
 
-	function _hashBlock(BlockHeader memory header) internal virtual returns (bytes32 blockHash) {
-		bytes.concat(
-			hex'a0', header.parentHash,
-			hex'a0', header.uncleHash,
-			hex'94', header.coinbase,
-			hex'a0', header.root,
-			hex'a0', header.txHash,
-			hex'a0', header.receiptHash,
-			hex'b90100', header.bloom,
-			hex'
-		);
-		encoded.push(hex'0x80')
-	library Rlp {
-		function encode(bytes32 self) returns (bytes memory encoded) {
-			assembly {
-				mstore(encoded, 0xa0)
-				mstore(add(encoded, 0x20), self)
-			}
-		}
-		function encode(uint256 self) returns (bytes memory encoded) {
-			assembly {
-				mstore(encoded, 0xa0)
-				mstore(add(encoded, 1), self)
-			}
-		}
-		function encode(address self) returns (bytes memory encoded) {
-			assembly {
-				mstore(encoded, shl(88, xor(0x940000000000000000000000000000000000000000, self)))
-			}
-		}
+	function _parseBlock(bytes calldata rlpHeader) internal virtual returns (BlockHeader memory header) {
+		assembly {
+			let free := mload(0x80)
+			let length := rlpHeader.length
+			let offset := 0	
 
-		function encode(uint64 self) returns (bytes memory encoded) {
-			if (self < 0x01) { assembly { mstore(encoded, 0x80) } }
-			if (self < 0x0100) { assembly { mstore(encoded, xor(0x81, bytes1())) } }
-			if (self < 0x0100)
-			// BE-align the LE int
-			bytes32(bytes8(self)) * 
-			assembly {
-				
-			}
-			self * ''
-			for (uint8 i; i < 8; i ++) {
-				if (self ^ (256**(8 - i))-1) {
-					assembly {
-						mstore(encoded, xor(add(0x80, i), shl(mul(8, i), self)))
-						mstore(add(encoded, 1), self)
-					}
+			// input should be a pointer to start of a calldata slice
+			function decode_length(input, length) -> offset, strLen, isList {
+
+				if iszero(length) { revert(0, 1) }
+
+				let prefix := byte(input)
+
+				function getcd(start, len) -> val {
+					let dst := sub(32, len)
+					calldatacopy(dst, start, len)
+					val := mload(dst)
 				}
+
+				if lt(prefix, 0x80) {
+					offset := 0
+					strLen := 1
+					isList := 0
+					leave
+				}
+
+				if and(lt(prefix, 0xb8), gt(length, sub(prefix, 0x80))) {
+					strLen := sub(prefix, 0x80)
+					offset := 1
+					isList := 0
+					leave
+				}
+
+				if and(and(
+					lt(prefix, 0xc0),
+					gt(length, sub(prefix, 0xb7))),
+					gt(length, add(sub(prefix, 0xb7), getcd(add(input, 1), sub(prefix, 0xb7))))
+				)) {
+				        lenOfStrLen := sub(prefix, 0xb7)
+					strLen := getcd(add(input, 1), lenOfStrLen)
+					offset := add(1, lenOfStrLen)
+					isList := 0
+					leave
+				}
+
+				if and(lt(prefix, 0xf8), gt(length, sub(prefix, 0xc0)) {
+					// listLen
+					strLen := sub(prefix, 0xc0)
+					offset := 1
+					isList := 1
+					leave
+				}
+
+				if and(and(
+					lt(prefix, 0x0100),
+					gt(length, sub(prefix, 0xf7))),
+					gt(length, add(sub(prefix, 0xf7), getcd(add(input, 1), sub(prefix, 0xf7)))
+				)) {
+					lenOfListLen := sub(prefix, 0xf7)
+					// listLen
+					strLen := getcd(add(input, 1), lenOfListLen)
+					offset := add(1, lenOfStrLen)
+					isList := 1
+					leave
+				}
+
+				revert(0, 2)
 			}
-			assembly {
-				mstore(0x20, self)
-				mstore(encoded, shl(192, xor(0x860000000000000000, self)))
-				mstore(encoadd(encoded, 1), self)
-			}
+
+			let offset, length, isList := decode_length(rlpHeader.offset, rlpHeader.length)
+			
 		}
-		function encode(bytes self) returns (bytes memory encoded) {
-			assembly {
-				mstore(encoded, 0xa0)
-				mstore(add(encoded, 0x20), self)
-			}
-		}
-	}
-
-	function rlp_encode():
-    if isinstance(input,str):
-        if len(input) == 1 and ord(input) < 0x80: return input
-        else: return encode_length(len(input), 0x80) + input
-    elif isinstance(input,list):
-        output = ''
-        for item in input: output += rlp_encode(item)
-        return encode_length(len(output), 0xc0) + output
-
-def encode_length(L,offset):
-    if L < 56:
-         return chr(L + offset)
-    elif L < 256**8:
-         BL = to_binary(L)
-         return chr(len(BL) + offset + 55) + BL
-    else:
-         raise Exception("input too long")
-
-def to_binary(x):
-    if x == 0:
-        return ''
-    else:
-        return to_binary(int(x / 256)) + chr(x % 256)
 	}
 
 	function getSignedBlock(uint256 blockchainId, uint256 number) public view returns (bytes32 blockHash, BlockHeader memory blockHeader, SignedBlock memory signedBlock) {
@@ -219,12 +205,13 @@ def to_binary(x):
 		}
 	}
 
-	function _addSignedBlock(BlockHeader memory blockHeader, bytes memory signature, uint256 blockchainId, bytes32 blockHash) internal {
-		require(keccak256(abi.encode(blockHeader)) == blockHash);
+	function _addSignedBlock(bytes memory rlpHeader, bytes memory signature, uint256 blockchainId, bytes32 blockHash) internal {
+		require(keccak256(rlpHeader) == blockHash);
 		address signer = ECDSA.recover(blockHash, signature);
 		require(_isValidator(signer));
 		require(!hasValidatorSigned[blockHash][signer]);
 		if (_isNewBlock(blockHash)) {
+			BlockHeader memory blockHeader = _parseBlock(rlpHeader);
 			blockHeaders[blockHash] = blockHeader;
 			blockHashes[blockchainId][blockHeader.number].push(blockHash);
 		}
@@ -232,13 +219,14 @@ def to_binary(x):
 		signedBlocks[blockHash].signatures.push(signature);
 	}
 
-	function _addFuseSignedBlock(BlockHeader memory blockHeader, bytes memory signature, bytes32 blockHash, address[] memory validators, uint256 cycleEnd) internal {
-		require(keccak256(abi.encode(blockHeader)) == blockHash);
+	function _addFuseSignedBlock(bytes memory rlpHeader, bytes memory signature, bytes32 blockHash, address[] memory validators, uint256 cycleEnd) internal {
+		require(keccak256(rlpHeader) == blockHash);
 		bytes32 payload = keccak256(abi.encode(blockHash, validators, cycleEnd));
 		address signer = ECDSA.recover(payload, signature);
 		require(_isValidator(signer));
 		require(!hasValidatorSigned[payload][signer]);
 		if (_isNewBlock(payload)) {
+			BlockHeader memory blockHeader = _parseBlock(rlpHeader);
 			blockHeaders[payload] = blockHeader;
 			signedBlocks[payload].validators = validators;
 			signedBlocks[payload].cycleEnd = cycleEnd;
