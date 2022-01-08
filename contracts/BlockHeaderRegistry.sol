@@ -35,12 +35,13 @@ contract BlockHeaderRegistry {
 		uint256 time;
 		bytes extra;
 		bytes32 mixDigest;
-		uint256 nonce;
+		uint64 nonce;
 		// uint256 baseFee;
 	}
 
 	struct Block {
 		BlockHeader header;
+		bytes rlpHeader;
 		bytes signature;
 		uint256 blockchainId;
 		bytes32 blockHash;
@@ -56,6 +57,7 @@ contract BlockHeaderRegistry {
 
 	// Block header for blockHash
 	mapping(bytes32 => BlockHeader) blockHeaders;
+	mapping(bytes32 => bytes) rlpHeaders;
 
 	mapping(uint256 => string) public blockchains;
 
@@ -92,6 +94,110 @@ contract BlockHeaderRegistry {
 				_addSignedBlock(_block.header, _block.signature, _block.blockchainId, _block.blockHash);
 			}
 		}
+	}
+		bytes32 parentHash;
+		bytes32 uncleHash;
+		address coinbase;
+		bytes32 root;
+		bytes32 txHash;
+		bytes32 receiptHash;
+		bytes bloom;
+		uint256 difficulty;
+		uint256 number;
+		uint256 gasLimit;
+		uint256 gasUsed;
+		uint256 time;
+		bytes extra;
+		bytes32 mixDigest;
+		uint256 nonce;
+		// uint256 baseFee;
+
+	function _hashBlock(BlockHeader memory header) internal virtual returns (bytes32 blockHash) {
+		bytes.concat(
+			hex'a0', header.parentHash,
+			hex'a0', header.uncleHash,
+			hex'94', header.coinbase,
+			hex'a0', header.root,
+			hex'a0', header.txHash,
+			hex'a0', header.receiptHash,
+			hex'b90100', header.bloom,
+			hex'
+		);
+		encoded.push(hex'0x80')
+	library Rlp {
+		function encode(bytes32 self) returns (bytes memory encoded) {
+			assembly {
+				mstore(encoded, 0xa0)
+				mstore(add(encoded, 0x20), self)
+			}
+		}
+		function encode(uint256 self) returns (bytes memory encoded) {
+			assembly {
+				mstore(encoded, 0xa0)
+				mstore(add(encoded, 1), self)
+			}
+		}
+		function encode(address self) returns (bytes memory encoded) {
+			assembly {
+				mstore(encoded, shl(88, xor(0x940000000000000000000000000000000000000000, self)))
+			}
+		}
+
+		function encode(uint64 self) returns (bytes memory encoded) {
+			if (self < 0x01) { assembly { mstore(encoded, 0x80) } }
+			if (self < 0x0100) { assembly { mstore(encoded, xor(0x81, bytes1())) } }
+			if (self < 0x0100)
+			// BE-align the LE int
+			bytes32(bytes8(self)) * 
+			assembly {
+				
+			}
+			self * ''
+			for (uint8 i; i < 8; i ++) {
+				if (self ^ (256**(8 - i))-1) {
+					assembly {
+						mstore(encoded, xor(add(0x80, i), shl(mul(8, i), self)))
+						mstore(add(encoded, 1), self)
+					}
+				}
+			}
+			assembly {
+				mstore(0x20, self)
+				mstore(encoded, shl(192, xor(0x860000000000000000, self)))
+				mstore(encoadd(encoded, 1), self)
+			}
+		}
+		function encode(bytes self) returns (bytes memory encoded) {
+			assembly {
+				mstore(encoded, 0xa0)
+				mstore(add(encoded, 0x20), self)
+			}
+		}
+	}
+
+	function rlp_encode():
+    if isinstance(input,str):
+        if len(input) == 1 and ord(input) < 0x80: return input
+        else: return encode_length(len(input), 0x80) + input
+    elif isinstance(input,list):
+        output = ''
+        for item in input: output += rlp_encode(item)
+        return encode_length(len(output), 0xc0) + output
+
+def encode_length(L,offset):
+    if L < 56:
+         return chr(L + offset)
+    elif L < 256**8:
+         BL = to_binary(L)
+         return chr(len(BL) + offset + 55) + BL
+    else:
+         raise Exception("input too long")
+
+def to_binary(x):
+    if x == 0:
+        return ''
+    else:
+        return to_binary(int(x / 256)) + chr(x % 256)
 	}
 
 	function getSignedBlock(uint256 blockchainId, uint256 number) public view returns (bytes32 blockHash, BlockHeader memory blockHeader, SignedBlock memory signedBlock) {
