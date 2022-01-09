@@ -108,7 +108,6 @@ contract BlockHeaderRegistry {
 			require(msg.sender == signer, "msg.sender == signer");
 			require(!hasValidatorSigned[payload][msg.sender], 'hasSigned');
 			hasValidatorSigned[payload][signer] = true;
-			signedBlocks[payload].signatures.push(abi.encodePacked(_block.signature.r, _block.signature.vs));
 			if (_isNewBlock(payload)) {
 	                        BlockHeader memory blockHeader = _parseBlock(_block.rlpHeader);
 	                        blockHeaders[payload] = blockHeader;
@@ -119,6 +118,7 @@ contract BlockHeaderRegistry {
 				}
 				signedBlocks[payload].creator = msg.sender;
 			}
+			signedBlocks[payload].signatures.push(abi.encodePacked(_block.signature.r, _block.signature.vs));
 		}
 	}
 
@@ -343,6 +343,7 @@ contract BlockHeaderRegistry {
 		}
 		SignedBlock storage _block = signedBlocks[blockHash];
 		signedBlock.signatures = _block.signatures;
+		signedBlock.creator = _block.creator;
 		if (_isFuse(blockchainId)) {
 			signedBlock.validators = _block.validators;
 			signedBlock.cycleEnd = _block.cycleEnd;

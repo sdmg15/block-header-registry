@@ -56,8 +56,8 @@ describe('BlockHeaderRegistry', async () => {
 
 		})
 	})
-	describe('Adding signed blocks', () => {
-		it('Should add a standard EVM signed block', async () => {
+	describe('Signed blocks', () => {
+		it('Should add and get a standard EVM signed block', async () => {
 			const signer = signers[0]
 			const header = {
 				'ParentHash':'0x1e77d8f1267348b516ebc4f4da1e2aa59f85f0cbd853949500ffac8bfc38ba14',
@@ -78,21 +78,24 @@ describe('BlockHeaderRegistry', async () => {
 //				'BaseFee': 0
 			}
 
-			const values = [['ParentHash','0x1e77d8f1267348b516ebc4f4da1e2aa59f85f0cbd853949500ffac8bfc38ba14'],
-['UncleHash','0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347'],
-['Coinbase','0x2a65Aca4D5fC5B5C859090a6c34d164135398226'],
-['Root','0x0b5e4386680f43c224c5c037efc0b645c8e1c3f6b30da0eec07272b4e6f8cd89'],
-['TxHash','0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421'],
-['ReceiptHash','0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421'],
-['Bloom','0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'],
-['Difficulty',ethers.utils.hexlify(6022643743806)],
-['Number',ethers.utils.hexlify(400000)],
-['GasLimit',ethers.utils.hexlify(3141592)],
-['GasUsed', '0x' ],//(0).toString(16)],
-['Time', ethers.utils.hexlify(1445130204)],
-['Extra','0xd583010202844765746885676f312e35856c696e7578'],
-['MixDigest','0x3fbea7af642a4e20cd93a945a1f5e23bd72fc5261153e09102cf718980aeff38'],
-['Nonce','0x6af23caae95692ef']]
+			const values = [
+				['ParentHash','0x1e77d8f1267348b516ebc4f4da1e2aa59f85f0cbd853949500ffac8bfc38ba14'],
+				['UncleHash','0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347'],
+				['Coinbase','0x2a65Aca4D5fC5B5C859090a6c34d164135398226'],
+				['Root','0x0b5e4386680f43c224c5c037efc0b645c8e1c3f6b30da0eec07272b4e6f8cd89'],
+				['TxHash','0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421'],
+				['ReceiptHash','0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421'],
+				['Bloom','0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'],
+				['Difficulty',ethers.utils.hexlify(6022643743806)],
+				['Number',ethers.utils.hexlify(400000)],
+				['GasLimit',ethers.utils.hexlify(3141592)],
+				['GasUsed', '0x' ],//(0).toString(16)],
+				['Time', ethers.utils.hexlify(1445130204)],
+				['Extra','0xd583010202844765746885676f312e35856c696e7578'],
+				['MixDigest','0x3fbea7af642a4e20cd93a945a1f5e23bd72fc5261153e09102cf718980aeff38'],
+				['Nonce','0x6af23caae95692ef']
+			]
+
 			const rlpHeader = ethers.utils.RLP.encode(Object.values(header).map((v,i) => {
 				if (v!= values[i][1]) throw new Error(i, values[i])
 				return v === 0 ? '0x' : v
@@ -112,6 +115,10 @@ describe('BlockHeaderRegistry', async () => {
 			])
 			const rx = await tx.wait()
 			expect(rx.status).to.equal(1)
+			const bhash = await blockHeaderRegistry.blockHashes(1, header.Number, 0);
+			const block = await blockHeaderRegistry.getSignedBlock(1, header.Number);
+			expect(bhash).to.equal(blockHash)
+			expect(block.signedBlock.creator).to.equal(signer.address)
 		})
 	})
 })
