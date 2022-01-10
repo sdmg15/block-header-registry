@@ -30,7 +30,7 @@ contract BlockHeaderRegistry {
 
     constructor(address _voting, address _consensus) {
         voting = _voting;
-	consensus = _consensus;
+        consensus = _consensus;
     }
 
     event Blockchain(uint256 blockchainId, string rpc);
@@ -112,10 +112,13 @@ contract BlockHeaderRegistry {
         bytes32[] memory _blockHashes = blockHashes[blockchainId][number];
         require(_blockHashes.length != 0, "_blockHashes.length");
         blockHash = _blockHashes[0];
-	uint256 _signatures = signedBlocks[blockHash].signatures.length;
+        uint256 _signatures = signedBlocks[blockHash].signatures.length;
         for (uint256 i = 1; i < _blockHashes.length; i++) {
             uint256 _sigs = signedBlocks[_blockHashes[i]].signatures.length;
-            if (_sigs > _signatures) { _signatures = _sigs; blockHash = _blockHashes[i]; }
+            if (_sigs > _signatures) {
+                _signatures = _sigs;
+                blockHash = _blockHashes[i];
+            }
         }
         SignedBlock storage _block = signedBlocks[blockHash];
         signedBlock.signatures = _block.signatures;

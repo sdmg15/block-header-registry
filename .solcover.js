@@ -1,3 +1,3 @@
 module.exports = {
-	skipFiles: ['parseBlock.sol', 'test/VotingMock.sol'],
+	skipFiles: ['parseBlock.sol'],
 }
