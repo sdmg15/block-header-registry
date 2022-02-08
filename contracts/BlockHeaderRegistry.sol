@@ -68,7 +68,7 @@ contract BlockHeaderRegistry {
             bytes32 payload = isFuse
                 ? keccak256(
                     abi.encodePacked(
-                        rlpHeaderHash,
+                        _block.blockHash,
                         _block.validators,
                         _block.cycleEnd
                     )
