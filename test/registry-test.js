@@ -64,17 +64,20 @@ describe("BlockHeaderRegistry", async () => {
 
   });
 
-  const addSigBlocks = async () => {
-    const rlpHeader = ethers.utils.RLP.encode(
-      Object.values(header).map((v) => (v === 0 ? "0x" : v))
-    );
-    const payload = ethers.utils.keccak256(rlpHeader);
+
+  const blockData = (rplHead, payload, r, vs,) => {
+    return [[rplHead, [r, vs], 1, payload, 0, []]];
+  };
+
+  const addSigBlocks = async (signerToUse, rlpHeaderp) => {
+    const payload = ethers.utils.keccak256(rlpHeaderp);
     const { _vs: vs, r } = ethers.utils.splitSignature(
-      await signer.signMessage(ethers.utils.arrayify(payload))
+      await signerToUse.signMessage(ethers.utils.arrayify(payload))
     );
     const tx = await blockHeaderRegistry
-      .connect(signer)
-      .addSignedBlocks([[rlpHeader, [r, vs], 1, payload, 0, []]]);
+      .connect(signerToUse)
+      .addSignedBlocks(blockData(rlpHeaderp, payload, r, vs));
+
     const rx = await tx.wait();
     expect(rx.status).to.equal(1);
     return payload;
@@ -101,6 +104,29 @@ describe("BlockHeaderRegistry", async () => {
   });
 
   describe("Signed blocks", () => {
+
+    it("Should return the block hash with most signatures", async () => {
+      const rlpHeader = ethers.utils.RLP.encode(
+        Object.values(header).map((v) => (v === 0 ? "0x" : v))
+      );
+      await addSigBlocks(signers[0], rlpHeader, blockData);
+
+      const header2 = {
+        ...header,
+        ReceiptHash:
+          "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b420",
+      };
+
+      const rlpHeader2 = ethers.utils.RLP.encode(Object.values(header2));
+      const payload2 = ethers.utils.keccak256(rlpHeader2);
+      const blockData2 = [[rlpHeader2, [], 1, payload2, 0, []]];
+
+      await addSigBlocks(signers[0], rlpHeader2, blockData2);
+      await addSigBlocks(signers[2], rlpHeader2, blockData2);
+
+      const block = await blockHeaderRegistry.getSignedBlock(1, header.Number);
+      expect(block.blockHash).to.equal("0x3980723ff8683042d45f5b3710b0da3d8d65ef256c36e8db3c938ef6d4e645ae");
+    });
 
     it("Should fail if the rlpHeaderHash is not the blockHash", async () => {
 
@@ -162,17 +188,14 @@ describe("BlockHeaderRegistry", async () => {
     });
     
     it("Should add and get a EVM signed block", async () => {
-      const payload = await addSigBlocks();
+      const rlpHeader = ethers.utils.RLP.encode(
+        Object.values(header).map((v) => (v === 0 ? "0x" : v))
+      );
+      const payload = await addSigBlocks(signer, rlpHeader);
       const bhash = await blockHeaderRegistry.blockHashes(1, header.Number, 0);
       expect(bhash).to.equal(payload);
       const block = await blockHeaderRegistry.getSignedBlock(1, header.Number);
       expect(block.signedBlock.creator).to.equal(signer.address);
-    });
-
-    it("Should return the block hash with most signatures", async () => {
-      await addSigBlocks();
-      const block = await blockHeaderRegistry.getSignedBlock(1, header.Number);
-      expect(block.blockHash).to.equal("0x5d15649e25d8f3e2c0374946078539d200710afc977cdfc6a977bd23f20fa8e8");
     });
 
     it("Should not let a non-validator add a signed block", async () => {
