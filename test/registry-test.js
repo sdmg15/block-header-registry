@@ -125,7 +125,7 @@ describe("BlockHeaderRegistry", async () => {
       await addSigBlocks(signers[2], rlpHeader2, blockData2);
 
       const block = await blockHeaderRegistry.getSignedBlock(1, header.Number);
-      expect(block.blockHash).to.equal("0x3980723ff8683042d45f5b3710b0da3d8d65ef256c36e8db3c938ef6d4e645ae");
+      expect(block.blockHash).to.equal(payload2);
     });
 
     it("Should fail if the rlpHeaderHash is not the blockHash", async () => {
